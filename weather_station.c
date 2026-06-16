@@ -1,6 +1,7 @@
 #include <xc.h>
 #include <stdio.h>
 
+// PIC Configuration Bits
 #pragma config FOSC = HS
 #pragma config WDTE = OFF
 #pragma config PWRTE = ON
@@ -10,8 +11,10 @@
 #pragma config WRT = OFF
 #pragma config CP = OFF
 
+// Crystal frequency = 20 MHz
 #define _XTAL_FREQ 20000000
 
+// LCD pins
 #define RS RB2
 #define EN RB3
 #define D4 RD0
@@ -19,27 +22,35 @@
 #define D6 RD2
 #define D7 RD3
 
+// DHT11 sensor pin
 #define DHT11 RA0
 #define DHT11_DIR TRISA0
 
-#define LED_GREEN RB0
-#define LED_RED   RB1
+// LED pins
+#define LED_GREEN RB1
+#define LED_RED   RB0
 
+// Button pin
 #define BUTTON RB4
 
+// DS1307 RTC I2C address
 #define DS1307_WRITE 0xD0
 #define DS1307_READ  0xD1
 
+// Sensor variables
 unsigned char temperature = 0;
 unsigned char humidity = 0;
 unsigned int light = 0;
 
+// RTC time/date variables
 unsigned char sec, min, hour;
 unsigned char day, date, month, year;
 
+// Screen control variables
 unsigned char screen = 0;
 unsigned char last_button = 1;
 
+// LCD enable pulse
 void LCD_Enable()
 {
     EN = 1;
@@ -48,6 +59,7 @@ void LCD_Enable()
     __delay_us(100);
 }
 
+// Send 4 bits to LCD data pins
 void LCD_Send4Bit(unsigned char data)
 {
     D4 = (data >> 0) & 1;
@@ -58,19 +70,21 @@ void LCD_Send4Bit(unsigned char data)
     LCD_Enable();
 }
 
+// Send command to LCD
 void LCD_Command(unsigned char cmd)
 {
-    RS = 0;
+    RS = 0;                  // Command mode
 
-    LCD_Send4Bit(cmd >> 4);
-    LCD_Send4Bit(cmd & 0x0F);
+    LCD_Send4Bit(cmd >> 4);  // Send high nibble
+    LCD_Send4Bit(cmd & 0x0F);// Send low nibble
 
     __delay_ms(2);
 }
 
+// Send character to LCD
 void LCD_Char(unsigned char data)
 {
-    RS = 1;
+    RS = 1;                  // Data mode
 
     LCD_Send4Bit(data >> 4);
     LCD_Send4Bit(data & 0x0F);
@@ -78,6 +92,7 @@ void LCD_Char(unsigned char data)
     __delay_ms(2);
 }
 
+// Print string on LCD
 void LCD_String(const char *str)
 {
     while(*str)
@@ -86,6 +101,7 @@ void LCD_String(const char *str)
     }
 }
 
+// Set LCD cursor position
 void LCD_SetCursor(unsigned char row, unsigned char col)
 {
     if(row == 1)
@@ -94,13 +110,14 @@ void LCD_SetCursor(unsigned char row, unsigned char col)
         LCD_Command(0xC0 + col - 1);
 }
 
+// Clear LCD
 void LCD_Clear()
 {
     LCD_Command(0x01);
-
     __delay_ms(2);
 }
 
+// Initialize LCD in 4-bit mode
 void LCD_Init()
 {
     TRISB2 = 0;
@@ -125,34 +142,37 @@ void LCD_Init()
     LCD_Send4Bit(0x03);
     __delay_ms(5);
 
-    LCD_Send4Bit(0x02);
+    LCD_Send4Bit(0x02);     // 4-bit mode
 
-    LCD_Command(0x28);
-    LCD_Command(0x0C);
-    LCD_Command(0x06);
-    LCD_Command(0x01);
+    LCD_Command(0x28);      // 4-bit, 2 lines
+    LCD_Command(0x0C);      // Display ON, cursor OFF
+    LCD_Command(0x06);      // Auto increment cursor
+    LCD_Command(0x01);      // Clear display
 
     __delay_ms(5);
 }
 
+// Initialize UART
 void UART_Init()
 {
-    TRISC6 = 0;
-    TRISC7 = 1;
+    TRISC6 = 0;             // TX pin output
+    TRISC7 = 1;             // RX pin input
 
-    SPBRG = 129;
+    SPBRG = 129;            // Baud rate 9600 for 20 MHz
 
-    TXSTA = 0x24;
-    RCSTA = 0x90;
+    TXSTA = 0x24;           // Enable TX, high speed mode
+    RCSTA = 0x90;           // Enable serial port and receiver
 }
 
+// Send one character by UART
 void UART_Write(char data)
 {
-    while(TXIF == 0);
+    while(TXIF == 0);       // Wait until TX buffer is empty
 
     TXREG = data;
 }
 
+// Send string by UART
 void UART_String(const char *s)
 {
     while(*s)
@@ -161,27 +181,30 @@ void UART_String(const char *s)
     }
 }
 
+// Initialize ADC on RA1
 void ADC_Init_RA1()
 {
-    ADCON1 = 0x80;
-    ADCON0 = 0x49;
+    ADCON1 = 0x80;          // Right justified, analog input enabled
+    ADCON0 = 0x49;          // Select channel RA1 and turn ADC ON
 
-    TRISA1 = 1;
+    TRISA1 = 1;             // RA1 input
 }
 
+// Read ADC value from RA1
 unsigned int ADC_Read_RA1()
 {
     ADC_Init_RA1();
 
-    __delay_us(30);
+    __delay_us(30);         // Acquisition delay
 
-    GO_nDONE = 1;
+    GO_nDONE = 1;           // Start conversion
 
-    while(GO_nDONE);
+    while(GO_nDONE);        // Wait until conversion finishes
 
     return ((unsigned int)ADRESH << 8) + ADRESL;
 }
 
+// Read one byte from DHT11
 unsigned char DHT11_ReadByte()
 {
     unsigned char i;
@@ -189,36 +212,38 @@ unsigned char DHT11_ReadByte()
 
     for(i = 0; i < 8; i++)
     {
-        while(!DHT11);
+        while(!DHT11);      // Wait for high signal
 
-        __delay_us(30);
+        __delay_us(30);     // Check signal length
 
         if(DHT11)
             data |= (1 << (7 - i));
 
-        while(DHT11);
+        while(DHT11);       // Wait until signal becomes low
     }
 
     return data;
 }
 
+// Send start signal to DHT11
 void DHT11_Start()
 {
-    ADCON1 = 0x06;
+    ADCON1 = 0x06;          // Make RA0 digital
 
-    DHT11_DIR = 0;
+    DHT11_DIR = 0;          // RA0 output
 
-    RA0 = 0;
+    RA0 = 0;                // Pull data line low
 
-    __delay_ms(20);
+    __delay_ms(20);         // Start signal delay
 
-    RA0 = 1;
+    RA0 = 1;                // Pull data line high
 
     __delay_us(30);
 
-    DHT11_DIR = 1;
+    DHT11_DIR = 1;          // RA0 input
 }
 
+// Check DHT11 response
 unsigned char DHT11_CheckResponse()
 {
     unsigned char response = 0;
@@ -238,6 +263,7 @@ unsigned char DHT11_CheckResponse()
     return response;
 }
 
+// Read temperature and humidity from DHT11
 void DHT11_ReadData()
 {
     unsigned char hum_int, hum_dec;
@@ -256,6 +282,7 @@ void DHT11_ReadData()
 
         checksum = DHT11_ReadByte();
 
+        // Check if received data is correct
         if(checksum == (unsigned char)(hum_int + hum_dec + temp_int + temp_dec))
         {
             humidity = hum_int;
@@ -264,24 +291,27 @@ void DHT11_ReadData()
     }
 }
 
+// Initialize I2C module
 void I2C_Init()
 {
-    TRISC3 = 1;
-    TRISC4 = 1;
+    TRISC3 = 1;             // SCL input
+    TRISC4 = 1;             // SDA input
 
-    SSPCON = 0x28;
+    SSPCON = 0x28;          // Enable MSSP in I2C master mode
     SSPCON2 = 0x00;
 
-    SSPADD = 49;
+    SSPADD = 49;            // 100 kHz I2C speed with 20 MHz
 
     SSPSTAT = 0x00;
 }
 
+// Wait until I2C is idle
 void I2C_Wait()
 {
     while((SSPCON2 & 0x1F) || (SSPSTAT & 0x04));
 }
 
+// I2C start condition
 void I2C_Start()
 {
     I2C_Wait();
@@ -291,6 +321,7 @@ void I2C_Start()
     while(SEN);
 }
 
+// I2C repeated start condition
 void I2C_Restart()
 {
     I2C_Wait();
@@ -300,6 +331,7 @@ void I2C_Restart()
     while(RSEN);
 }
 
+// I2C stop condition
 void I2C_Stop()
 {
     I2C_Wait();
@@ -309,6 +341,7 @@ void I2C_Stop()
     while(PEN);
 }
 
+// Write byte to I2C bus
 void I2C_Write(unsigned char data)
 {
     I2C_Wait();
@@ -320,41 +353,43 @@ void I2C_Write(unsigned char data)
     SSPIF = 0;
 }
 
+// Read byte from I2C bus
 unsigned char I2C_Read(unsigned char ack)
 {
     unsigned char data;
 
     I2C_Wait();
 
-    RCEN = 1;
+    RCEN = 1;               // Enable receive mode
 
-    while(!BF);
+    while(!BF);             // Wait until buffer is full
 
     data = SSPBUF;
 
     I2C_Wait();
 
-    ACKDT = ack ? 0 : 1;
+    ACKDT = ack ? 0 : 1;    // ACK if ack=1, NACK if ack=0
 
-    ACKEN = 1;
+    ACKEN = 1;              // Send ACK/NACK
 
     while(ACKEN);
 
     return data;
 }
 
-//================ RTC =================
-
+// Convert BCD value to decimal
 unsigned char BCD_To_Dec(unsigned char val)
 {
     return ((val >> 4) * 10) + (val & 0x0F);
 }
 
+// Convert decimal value to BCD
 unsigned char Dec_To_BCD(unsigned char val)
 {
     return ((val / 10) << 4) + (val % 10);
 }
 
+// Set time and date in DS1307 RTC
 void DS1307_SetTime()
 {
     I2C_Start();
@@ -363,10 +398,10 @@ void DS1307_SetTime()
     I2C_Write(0x00);
 
     I2C_Write(Dec_To_BCD(0));    // Seconds
-    I2C_Write(Dec_To_BCD(30)); 
-    I2C_Write(Dec_To_BCD(20));// Hours
+    I2C_Write(Dec_To_BCD(30));   // Minutes
+    I2C_Write(Dec_To_BCD(20));   // Hours
 
-    I2C_Write(Dec_To_BCD(1));    // Monday
+    I2C_Write(Dec_To_BCD(1));    // Day
     I2C_Write(Dec_To_BCD(25));   // Date
     I2C_Write(Dec_To_BCD(5));    // Month
     I2C_Write(Dec_To_BCD(26));   // Year
@@ -374,6 +409,7 @@ void DS1307_SetTime()
     I2C_Stop();
 }
 
+// Read time and date from DS1307 RTC
 void DS1307_ReadTime()
 {
     I2C_Start();
@@ -393,24 +429,24 @@ void DS1307_ReadTime()
 
     date  = BCD_To_Dec(I2C_Read(1));
     month = BCD_To_Dec(I2C_Read(1));
-    year  = BCD_To_Dec(I2C_Read(0));
+    year  = BCD_To_Dec(I2C_Read(0)); // Last byte, send NACK
 
     I2C_Stop();
 }
 
-//================ BUTTON =================
-
+// Check button press and switch LCD screen
 void Check_Button()
 {
     unsigned char current_button = BUTTON;
 
+    // Detect falling edge: button changed from 1 to 0
     if(last_button == 1 && current_button == 0)
     {
-        __delay_ms(40);
+        __delay_ms(40);     // Debounce delay
 
         if(BUTTON == 0)
         {
-            screen = !screen;
+            screen = !screen; // Change screen
 
             LCD_Clear();
         }
@@ -419,35 +455,36 @@ void Check_Button()
     last_button = current_button;
 }
 
-//================ MAIN =================
-
+// Main function
 void main()
 {
     char txt[32];
     unsigned char i;
 
-    ADCON1 = 0x06;
+    ADCON1 = 0x06;          // Make pins digital first
 
-    TRISB0 = 0;
-    TRISB1 = 0;
+    TRISB0 = 0;             // Red LED output
+    TRISB1 = 0;             // Green LED output
 
-    TRISB4 = 1;
+    TRISB4 = 1;             // Button input
 
     LED_GREEN = 0;
     LED_RED = 0;
 
-    LCD_Init();
+    LCD_Init();             // Initialize LCD
 
-    I2C_Init();
+    I2C_Init();             // Initialize I2C
 
-    UART_Init();
+    UART_Init();            // Initialize UART
 
+    // Startup message on LCD
     LCD_SetCursor(1,1);
     LCD_String("Weather System");
 
     LCD_SetCursor(2,1);
     LCD_String("Starting...");
 
+    // Startup message on serial monitor
     UART_String("Weather System Started\r\n");
 
     __delay_ms(2000);
@@ -456,16 +493,17 @@ void main()
 
     while(1)
     {
-        DHT11_ReadData();
+        DHT11_ReadData();   // Read temperature and humidity
 
-        light = ADC_Read_RA1();
+        light = ADC_Read_RA1(); // Read light sensor value
 
-        DS1307_ReadTime();
+        DS1307_ReadTime();  // Read date and time
 
-        Check_Button();
+        Check_Button();     // Check if button is pressed
 
         if(screen == 0)
         {
+            // Weather screen
             LCD_SetCursor(1,1);
 
             LCD_String("Weather Station");
@@ -481,6 +519,7 @@ void main()
         }
         else
         {
+            // Date and time screen
             LCD_SetCursor(1,1);
 
             sprintf(txt,"Date:%02u/%02u/%02u",
@@ -500,17 +539,19 @@ void main()
             LCD_String(txt);
         }
 
+        // LED control based on temperature
         if(temperature > 30)
         {
-            LED_RED = 0;
-            LED_GREEN = 1;
+            LED_RED = 1;    // Hot condition
+            LED_GREEN = 0;
         }
         else
         {
-            LED_RED = 1;
-            LED_GREEN = 0;
+            LED_RED = 0;
+            LED_GREEN = 1;  // Normal condition
         }
 
+        // Send data to UART
         UART_String("Weather Station\r\n");
 
         sprintf(txt,"T:%02u H:%02u L:%04u\r\n",
@@ -530,6 +571,7 @@ void main()
 
         UART_String(txt);
 
+        // Small delay while still checking button
         for(i = 0; i < 10; i++)
         {
             Check_Button();
